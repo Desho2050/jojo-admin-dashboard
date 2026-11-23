@@ -1,6 +1,7 @@
 // وصفات جوجو — Supabase Edge Function build of the admin API (slug: app).
-// Same routes/validators as ../routes.mjs; data lives in schema `jojo`
-// (table content_documents) and private bucket `jojo-chef-images`.
+// Same routes/validators as ../routes.mjs; data lives in the public table
+// `jojo_content_documents` (PostgREST exposes only public) and private bucket
+// `jojo-chef-images`.
 // Secrets (never committed): ADMIN_PASSWORD_SHA256 / TOKEN_SECRET.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -125,7 +126,7 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   { auth: { persistSession: false } });
-const db = supabase.schema('jojo');
+const db = supabase;
 const bucket = supabase.storage.from('jojo-chef-images');
 
 const storage = {
@@ -186,7 +187,7 @@ async function requireAdmin(request: Request) {
 }
 
 async function loadDocuments() {
-  const found = rows(await db.from('content_documents').select('key,value').limit(10));
+  const found = rows(await db.from('jojo_content_documents').select('key,value').limit(10));
   const docs: any = {};
   for (const row of found) docs[row.key] = row.value;
   return {
@@ -241,10 +242,10 @@ async function handle(request: Request): Promise<Response> {
     const { key, value } = body ?? {};
     if (!DOC_KEYS.includes(key) || !validDocument(key, value)) fail('invalid_input', 400);
     const updatedAt = new Date().toISOString();
-    const updated = rows(await db.from('content_documents')
+    const updated = rows(await db.from('jojo_content_documents')
       .update({ value, updated_at: updatedAt }).eq('key', key).select('key'));
     if (!updated?.length) {
-      rows(await db.from('content_documents').insert({ key, value, updated_at: updatedAt }));
+      rows(await db.from('jojo_content_documents').insert({ key, value, updated_at: updatedAt }));
     }
     return Response.json({ ok: true, key, updatedAt });
   }
