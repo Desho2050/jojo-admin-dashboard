@@ -10,6 +10,7 @@ const proxy = {
 };
 
 export default defineConfig({
+  base: "/jojo-admin-dashboard/",
   plugins: [react()],
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
   server: { host: "127.0.0.1", proxy },

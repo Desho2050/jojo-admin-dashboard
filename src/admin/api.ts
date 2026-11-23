@@ -38,13 +38,18 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// Empty (local dev via Vite proxy, or same-origin deploy) → relative
+// /functions/v1/app path; hosted GitHub Pages builds set VITE_API_BASE to the
+// Supabase Edge Function URL.
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
 export async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const token = tokenStore.get();
   if (token && path !== '/api/login') headers.set('authorization', `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(`/functions/v1/app${path}`, { credentials: 'same-origin', ...init, headers, signal: AbortSignal.timeout(30_000) });
+    response = await fetch(`${API_BASE}/functions/v1/app${path}`, { credentials: 'same-origin', ...init, headers, signal: AbortSignal.timeout(30_000) });
   } catch {
     throw new ApiError('network_error', 0);
   }
