@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster, toast } from "sonner";
 import {
-  api, message, stripSignatures, tokenStore,
+  api, message, stripRecipeSignatures, stripSignatures, tokenStore,
   type Content, type DocKey,
 } from "./admin/api";
 import Login from "./admin/Login";
@@ -60,7 +60,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   async function save() {
     setSaving(true);
     const jobs: Array<[DocKey, unknown]> = [];
-    if (dirty.recipes) jobs.push(["recipes", { items: content.recipes }]);
+    if (dirty.recipes) jobs.push(["recipes", { items: stripRecipeSignatures(content.recipes) }]);
     if (dirty.chef_posts) jobs.push(["chef_posts", stripSignatures(content.chefPosts)]);
     if (dirty.meta) jobs.push(["meta", content.meta]);
     try {

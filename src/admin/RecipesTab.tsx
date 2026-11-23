@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,14 @@ export default function RecipesTab({ recipes, onChange }: {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Recipe | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const previewsRef = useRef<Record<string, string>>({});
+
+  useEffect(() => () => {
+    Object.values(previewsRef.current).forEach(url => {
+      if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    });
+  }, []);
 
   const visible = useMemo(() => {
     const q = normalizeArabic(query.trim());
@@ -33,7 +41,13 @@ export default function RecipesTab({ recipes, onChange }: {
     });
   }, [recipes, query, kitchen, category]);
 
-  function upsert(recipe: Recipe) {
+  function upsert(recipe: Recipe, previewUrl: string) {
+    if (previewUrl.startsWith("blob:") && recipe.imageUrl) {
+      const previous = previewsRef.current[recipe.imageUrl];
+      if (previous?.startsWith("blob:") && previous !== previewUrl) URL.revokeObjectURL(previous);
+      previewsRef.current = { ...previewsRef.current, [recipe.imageUrl]: previewUrl };
+      setPreviews(previewsRef.current);
+    }
     const exists = recipes.some(r => r.id === recipe.id);
     onChange(exists ? recipes.map(r => r.id === recipe.id ? recipe : r) : [...recipes, recipe]);
   }
@@ -57,12 +71,16 @@ export default function RecipesTab({ recipes, onChange }: {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {visible.map(recipe => (
+        {visible.map(recipe => {
+          const imageUrl = (recipe.imageUrl ? previews[recipe.imageUrl] : undefined) ?? recipe.signedImageUrl;
+          return (
           <Card key={recipe.id} className="border-[#e6d7c3] transition-shadow hover:shadow-md">
             <CardContent className="grid gap-3 p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3">
-                  <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#f3eadc] text-2xl">{recipe.emoji}</span>
+                  {imageUrl
+                    ? <img src={imageUrl} alt="" className="size-12 shrink-0 rounded-xl bg-[#f3eadc] object-cover" />
+                    : <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#f3eadc] text-2xl">{recipe.emoji}</span>}
                   <div>
                     <h3 className="font-bold leading-snug">{recipe.name}</h3>
                     <p className="text-xs text-muted-foreground">{KITCHEN_NAMES[recipe.kitchen]} · {CATEGORY_NAMES[recipe.category]}</p>
@@ -94,7 +112,8 @@ export default function RecipesTab({ recipes, onChange }: {
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
       {!visible.length && <p className="py-10 text-center text-muted-foreground">لا وصفة مطابقة للبحث الحالي.</p>}
 

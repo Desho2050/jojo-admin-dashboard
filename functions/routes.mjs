@@ -71,6 +71,8 @@ function validRecipe(value) {
   if (!ID_PATTERN.test(value.id ?? '') || !isStr(value.name, 120, { min: 1 }) || !isStr(value.subtitle ?? '', 200)) return false;
   if (!CATEGORIES.includes(value.category) || !KITCHENS.includes(value.kitchen) || !DIFFICULTIES.includes(value.difficulty)) return false;
   if (!isStr(value.emoji ?? '', 8, { min: 1 })) return false;
+  if (!(value.imageUrl == null || value.imageUrl === '' || IMAGE_PATH_PATTERN.test(value.imageUrl))) return false;
+  if ('signedImageUrl' in value) return false;
   if (!isInt(value.prepMinutes, 0, 600) || !isInt(value.cookMinutes, 0, 1440) || !isInt(value.servings, 1, 100)) return false;
   if (!isStr(value.description ?? '', 5000)) return false;
   if (!Array.isArray(value.ingredients) || value.ingredients.length > 100) return false;
@@ -162,7 +164,16 @@ export function application({ db, storage, BackendError, passwordSha256, tokenSe
     };
   }
 
-  async function signContent(chefPosts) {
+  async function signContent(recipes, chefPosts) {
+    const signedRecipes = [];
+    for (const recipe of recipes) {
+      let signed = '';
+      if (recipe.imageUrl) {
+        try { signed = (await storage.createSignedUrl(recipe.imageUrl, 3600))?.signedUrl ?? ''; }
+        catch { signed = ''; }
+      }
+      signedRecipes.push({ ...recipe, signedImageUrl: signed });
+    }
     const out = { nadia: [], magda: [] };
     for (const chef of ['nadia', 'magda']) {
       for (const post of chefPosts[chef]) {
@@ -174,7 +185,7 @@ export function application({ db, storage, BackendError, passwordSha256, tokenSe
         out[chef].push({ ...post, signedUrl: signed });
       }
     }
-    return out;
+    return { recipes: signedRecipes, chefPosts: out };
   }
 
   return async ctx => {
@@ -196,8 +207,8 @@ export function application({ db, storage, BackendError, passwordSha256, tokenSe
 
     if (path === '/api/content' && request.method === 'GET') {
       const docs = await loadDocuments();
-      const chefPosts = await signContent(docs.chefPosts);
-      return Response.json({ ok: true, version: 1, fetchedAt: new Date().toISOString(), ...docs, chefPosts });
+      const signed = await signContent(docs.recipes, docs.chefPosts);
+      return Response.json({ ok: true, version: 1, fetchedAt: new Date().toISOString(), ...docs, ...signed });
     }
 
     if (path === '/api/documents' && request.method === 'POST') {

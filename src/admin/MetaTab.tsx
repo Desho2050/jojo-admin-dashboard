@@ -13,6 +13,7 @@ export default function MetaTab({ recipes, meta, onMetaChange }: {
   const featured = meta.featured;
   const nameOf = (id: string) => recipes.find(r => r.id === id)?.name ?? id;
   const emojiOf = (id: string) => recipes.find(r => r.id === id)?.emoji ?? "🍽";
+  const imageOf = (id: string) => recipes.find(r => r.id === id)?.signedImageUrl ?? "";
 
   const candidates = recipes.filter(r => !featured.includes(r.id)).filter(r => {
     const q = normalizeArabic(query.trim());
@@ -37,7 +38,9 @@ export default function MetaTab({ recipes, meta, onMetaChange }: {
             {featured.map((id, i) => (
               <li key={id} className="flex items-center gap-2 rounded-xl border border-[#e6d7c3] bg-[#faf6ef] px-3 py-2">
                 <span className="grid size-6 place-items-center rounded-full bg-[#c2410c] text-xs font-bold text-white">{i + 1}</span>
-                <span className="text-lg">{emojiOf(id)}</span>
+                {imageOf(id)
+                  ? <img src={imageOf(id)} alt="" className="size-7 rounded-md object-cover" />
+                  : <span className="text-lg">{emojiOf(id)}</span>}
                 <span className="flex-1 truncate font-medium">{nameOf(id)}</span>
                 <Button size="sm" variant="ghost" aria-label="أعلى" disabled={i === 0} onClick={() => move(i, -1)}>↑</Button>
                 <Button size="sm" variant="ghost" aria-label="أسفل" disabled={i === featured.length - 1} onClick={() => move(i, 1)}>↓</Button>
@@ -57,7 +60,9 @@ export default function MetaTab({ recipes, meta, onMetaChange }: {
           <ul className="grid max-h-[28rem] gap-2 overflow-y-auto">
             {candidates.map(r => (
               <li key={r.id} className="flex items-center gap-2 rounded-xl border border-transparent px-3 py-2 hover:bg-[#f3eadc]">
-                <span className="text-lg">{r.emoji}</span>
+                {r.signedImageUrl
+                  ? <img src={r.signedImageUrl} alt="" className="size-7 rounded-md object-cover" />
+                  : <span className="text-lg">{r.emoji}</span>}
                 <span className="flex-1 truncate">{r.name}</span>
                 <Button size="sm" variant="outline"
                   onClick={() => onMetaChange({ ...meta, featured: [...featured, r.id] })}>+</Button>

@@ -21,6 +21,11 @@ assert(r.status === 401, 'login is exact (no trim)');
 const auth = { authorization: `Bearer ${token}` };
 r = await j(`${BASE}/api/content`);
 assert(r.status === 200 && r.body.recipes.length === 38 && r.body.chefPosts.nadia.length === 10 && r.body.chefPosts.magda.length === 0 && r.body.meta.featured.length === 6, 'public content shape');
+assert(r.body.recipes.every(recipe => recipe.signedImageUrl === ''), 'legacy recipes keep emoji fallback');
+
+const seedRecipes = r.body.recipes.map(({ signedImageUrl: _signed, ...recipe }) => recipe);
+r = await j(`${BASE}/api/documents`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body: JSON.stringify({ key: 'recipes', value: { items: seedRecipes.map(recipe => recipe.id === 'koshari' ? { ...recipe, imageUrl: 'https://example.com/image.png' } : recipe) } }) });
+assert(r.status === 400, 'recipe image rejects external URL');
 
 r = await j(`${BASE}/api/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'meta', value: { featured: ['koshari'] } }) });
 assert(r.status === 401, 'save requires token');
@@ -66,6 +71,27 @@ const tp = r.body.chefPosts.nadia.find(p => p.id === 'test-post-1');
 assert(tp && tp.signedUrl.startsWith('/storage/v1/'), 'content signs uploaded image');
 const img = await fetch('http://127.0.0.1:8000' + tp.signedUrl);
 assert(img.status === 200 && img.headers.get('content-type') === 'image/webp', 'signed url serves bytes');
+
+// recipe image: attach the uploaded object, sign it on read, and never persist the signature
+r = await j(`${BASE}/api/content`);
+const recipes = r.body.recipes.map(({ signedImageUrl: _signed, ...recipe }) =>
+  recipe.id === 'koshari' ? { ...recipe, imageUrl: uploadedPath } : recipe);
+r = await j(`${BASE}/api/documents`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body: JSON.stringify({ key: 'recipes', value: { items: recipes } }) });
+assert(r.status === 200 && r.body.ok, 'save recipe image path');
+
+r = await j(`${BASE}/api/content`);
+const recipeImage = r.body.recipes.find(recipe => recipe.id === 'koshari');
+assert(recipeImage.imageUrl === uploadedPath && recipeImage.signedImageUrl.startsWith('/storage/v1/'), 'content signs recipe image');
+const recipeImg = await fetch('http://127.0.0.1:8000' + recipeImage.signedImageUrl);
+assert(recipeImg.status === 200 && recipeImg.headers.get('content-type') === 'image/webp', 'recipe signed url serves bytes');
+
+r = await j(`${BASE}/api/documents`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body: JSON.stringify({ key: 'recipes', value: { items: r.body.recipes } }) });
+assert(r.status === 400, 'save rejects transient recipe image signatures');
+
+r = await j(`${BASE}/api/documents`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body: JSON.stringify({ key: 'recipes', value: { items: recipes.map(recipe => recipe.id === 'koshari' ? { ...recipe, imageUrl: '' } : recipe) } }) });
+assert(r.status === 200, 'remove recipe image');
+r = await j(`${BASE}/api/content`);
+assert(r.body.recipes.find(recipe => recipe.id === 'koshari').signedImageUrl === '', 'removed recipe image returns empty signature');
 
 r = await j(`${BASE}/api/unknown`);
 assert(r.status === 404, 'unknown path 404');

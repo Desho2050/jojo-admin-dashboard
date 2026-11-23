@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,14 +8,14 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Separator } from "@/components/ui/separator";
 import {
   CATEGORIES, CATEGORY_NAMES, DIFFICULTIES, DIFFICULTY_NAMES, KITCHENS, KITCHEN_NAMES,
-  type Recipe, newId,
+  api, message, type Recipe, newId,
 } from "./api";
 
 const ID_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
 function blankRecipe(): Recipe {
   return {
-    id: newId("r"), name: "", subtitle: "", category: "MAIN", kitchen: "MASRI", emoji: "🍲",
+    id: newId("r"), name: "", subtitle: "", category: "MAIN", kitchen: "MASRI", emoji: "🍲", imageUrl: "",
     prepMinutes: 15, cookMinutes: 30, servings: 4, difficulty: "MEDIUM",
     description: "", ingredients: [{ name: "", amount: "" }], steps: [{ text: "", minutes: 0 }], notes: [],
   };
@@ -30,20 +30,57 @@ export default function RecipeEditor({ open, recipe, existingIds, onClose, onIns
   recipe: Recipe | null;
   existingIds: string[];
   onClose: () => void;
-  onInsert: (recipe: Recipe) => void;
+  onInsert: (recipe: Recipe, previewUrl: string) => void;
 }) {
   const [draft, setDraft] = useState<Recipe>(blankRecipe);
+  const [preview, setPreview] = useState("");
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
-      setDraft(recipe ? JSON.parse(JSON.stringify(recipe)) : blankRecipe());
+      const { signedImageUrl: _signedImageUrl, ...clean } = recipe ? JSON.parse(JSON.stringify(recipe)) : blankRecipe();
+      setDraft(clean);
+      setPreview(recipe?.signedImageUrl ?? "");
       setError("");
+    } else {
+      setPreview(current => {
+        if (current.startsWith("blob:")) URL.revokeObjectURL(current);
+        return "";
+      });
     }
   }, [open, recipe]);
 
   function set<K extends keyof Recipe>(key: K, value: Recipe[K]) {
     setDraft(d => ({ ...d, [key]: value }));
+  }
+
+  async function pickImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type))
+      return setError("الصورة يجب أن تكون PNG أو JPEG أو WebP.");
+    if (file.size > 5 * 1024 * 1024)
+      return setError("حجم الصورة يجب أن يقل عن 5 ميغابايت.");
+    setUploading(true);
+    try {
+      const result = await api<{ path: string }>("/api/upload", {
+        method: "POST", headers: { "content-type": file.type }, body: file,
+      });
+      const nextPreview = URL.createObjectURL(file);
+      setPreview(current => {
+        if (current.startsWith("blob:")) URL.revokeObjectURL(current);
+        return nextPreview;
+      });
+      setDraft(d => ({ ...d, imageUrl: result.path, signedImageUrl: undefined }));
+      setError("");
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setUploading(false);
+    }
   }
 
   function save() {
@@ -56,13 +93,16 @@ export default function RecipeEditor({ open, recipe, existingIds, onClose, onIns
     const clean: Recipe = {
       ...draft,
       name: draft.name.trim(), subtitle: draft.subtitle.trim(), description: draft.description.trim(),
+      imageUrl: draft.imageUrl ?? "", signedImageUrl: undefined,
       ingredients: draft.ingredients.map(i => ({ name: i.name.trim(), amount: (i.amount ?? "").trim() })),
       steps: draft.steps.map(s => ({ text: s.text.trim(), minutes: Number(s.minutes) || 0, ...(s.tip?.trim() ? { tip: s.tip.trim() } : {}) })),
       notes: draft.notes.map(n => n.trim()).filter(Boolean),
       prepMinutes: Number(draft.prepMinutes) || 0, cookMinutes: Number(draft.cookMinutes) || 0,
       servings: Math.max(1, Number(draft.servings) || 1),
     };
-    onInsert(clean);
+    const submittedPreview = preview;
+    setPreview("");
+    onInsert(clean, submittedPreview);
     onClose();
   }
 
@@ -88,6 +128,37 @@ export default function RecipeEditor({ open, recipe, existingIds, onClose, onIns
           <div className="grid gap-2 sm:col-span-2">
             <Label>الوصف المختصر</Label>
             <Field value={draft.subtitle} maxLength={200} onInput={e => set("subtitle", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className="grid gap-2 sm:col-span-2">
+            <Label htmlFor="recipe-image-file">صورة الوصفة (اختياري)</Label>
+            <p id="recipe-image-help" className="text-sm text-muted-foreground">
+              PNG أو JPEG أو WebP، حتى 5 ميغابايت. بدون صورة يظهر الرمز التعبيري في التطبيق.
+            </p>
+            {preview
+              ? <img src={preview} alt="معاينة صورة الوصفة" className="aspect-video w-full rounded-xl border border-[#e6d7c3] object-cover" />
+              : <div className="grid aspect-video w-full place-items-center rounded-xl border border-dashed border-[#e6d7c3] bg-[#faf6ef]">
+                  <div className="text-center">
+                    <span className="text-5xl" aria-hidden="true">{draft.emoji || "🍽"}</span>
+                    <p className="mt-2 text-sm text-muted-foreground">لم تُرفع صورة بعد</p>
+                  </div>
+                </div>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={uploading}
+                aria-describedby="recipe-image-help" onClick={() => fileRef.current?.click()}>
+                {uploading ? "جارٍ الرفع…" : draft.imageUrl ? "تغيير الصورة" : "اختيار صورة"}
+              </Button>
+              {draft.imageUrl && <Button type="button" size="sm" variant="ghost" className="text-red-600"
+                disabled={uploading} onClick={() => {
+                  setPreview(current => {
+                    if (current.startsWith("blob:")) URL.revokeObjectURL(current);
+                    return "";
+                  });
+                  set("imageUrl", "");
+                  set("signedImageUrl", undefined);
+                }}>إزالة الصورة</Button>}
+              <input ref={fileRef} id="recipe-image-file" type="file" accept="image/png,image/jpeg,image/webp"
+                className="hidden" aria-describedby="recipe-image-help" onChange={pickImage} />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label>التصنيف</Label>

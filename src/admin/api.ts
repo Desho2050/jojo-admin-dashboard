@@ -17,7 +17,8 @@ export type Ingredient = { name: string; amount: string };
 export type Step = { text: string; minutes: number; tip?: string | null };
 export type Recipe = {
   id: string; name: string; subtitle: string; category: string; kitchen: string;
-  emoji: string; prepMinutes: number; cookMinutes: number; servings: number;
+  emoji: string; imageUrl?: string; signedImageUrl?: string;
+  prepMinutes: number; cookMinutes: number; servings: number;
   difficulty: string; description: string; ingredients: Ingredient[]; steps: Step[]; notes: string[];
 };
 export type ChefPost = { id: string; title: string; assetPath: string; imageUrl: string; sourceUrl: string; signedUrl?: string };
@@ -76,6 +77,10 @@ export const message = (error: unknown) =>
 export function stripSignatures(chefPosts: ChefPosts): ChefPosts {
   const clean = (posts: ChefPost[]) => posts.map(({ signedUrl: _s, ...post }) => post);
   return { nadia: clean(chefPosts.nadia), magda: clean(chefPosts.magda) };
+}
+
+export function stripRecipeSignatures(recipes: Recipe[]): Recipe[] {
+  return recipes.map(({ signedImageUrl: _signed, ...recipe }) => recipe);
 }
 
 export function newId(prefix: string) {
